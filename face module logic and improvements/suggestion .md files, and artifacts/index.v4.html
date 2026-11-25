@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Face Liveness v4</title>
+<style>
+  :root{--bg:#fff;--fg:#111}
+  @media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee}}
+  body{font-family:system-ui,sans-serif;max-width:480px;margin:24px auto;padding:0 16px;background:var(--bg);color:var(--fg)}
+  video{width:100%;border-radius:12px;background:#000;transform:scaleX(-1)}
+  button{padding:10px 18px;margin:8px 8px 0 0;border:0;border-radius:8px;background:#2563eb;color:#fff;font-size:15px}
+  button:disabled{opacity:.5}
+  #msg{font-size:20px;margin:12px 0;min-height:28px}
+  #flash{position:fixed;inset:0;z-index:9999;display:none;pointer-events:none}
+  small{opacity:.7}
+</style>
+</head>
+<body>
+<video id="v" playsinline muted></video>
+<div id="msg">Loading…</div>
+<input id="uid" placeholder="user id" value="mickey">
+<button id="enrol" disabled>Enroll (must be logged in)</button>
+<button id="ver" disabled>Face login</button>
+<p><small>The light check flashes colours on the screen (about 4 seconds, under 3 flashes per second). Turn screen brightness up and avoid strong backlight. If you are sensitive to flashing lights, use your passkey/OTP fallback instead.</small></p>
+<div id="flash"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/ort.min.js"></script>
+<script type="module">
+import { loadModels, startCamera, AntiSpoof, runLiveness, getChallenge, submitEnroll, faceLogin } from './face-liveness.v4.js';
+const $ = (i) => document.getElementById(i), msg = (t) => $('msg').textContent = t;
+const ui = { onPrompt: msg, setOverlay: (c) => { const f = $('flash'); f.style.background = c || ''; f.style.display = c ? 'block' : 'none'; } };
+let stream; const sp = new AntiSpoof();
+try {
+  await loadModels(); await sp.load(); stream = await startCamera($('v'));
+  msg('Ready'); $('enrol').disabled = $('ver').disabled = false;
+} catch (e) { msg('Error: ' + e.message); }
+
+const busy = (b) => $('enrol').disabled = $('ver').disabled = b;
+$('ver').onclick = async () => { busy(true);
+  try { const r = await faceLogin($('v'), stream, sp, $('uid').value, ui); msg(r.ok ? '✅ Logged in' : r.stepUp ? '⚠️ Lighting weak — use your passkey/OTP to finish' : '❌ ' + (r.reason || r.error)); }
+  catch (e) { msg('❌ ' + e.message); } busy(false); };
+$('enrol').onclick = async () => { busy(true);
+  try { const ch = await getChallenge(null, 'enroll'); const r = await runLiveness($('v'), stream, { challenge: ch, antiSpoof: sp, ...ui });
+    if (!r.ok) msg('❌ ' + r.reason); else { const s = await submitEnroll(r.evidence); msg(s.ok ? '✅ Enrolled' : '❌ ' + s.error); } }
+  catch (e) { msg('❌ ' + e.message); } busy(false); };
+</script>
+</body>
+</html>

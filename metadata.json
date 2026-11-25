@@ -1,0 +1,10 @@
+{
+  "name": "Remix VeriMark",
+  "description": "Facial attendance management system featuring on-demand biometric verification, student Attendance ID registration, daily analytics dashboard, and historical logs.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
