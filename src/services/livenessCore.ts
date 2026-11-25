@@ -48,8 +48,9 @@ export class BlinkTracker {
   ): boolean {
     const closeF = opts.lowFps ? 0.83 : 0.80;
     const openF = 0.87;
-    const maxSym = opts.lowFps ? 0.13 : 0.12;
-    const deepF = closeF;
+    const maxSymmetryDiff = Math.max(0.05, opts.earPeak * 0.3);
+    const maxCloseMs = 700;
+    const minCloseMs = opts.lowFps ? 60 : 55;
 
     if (this.locked) {
       if (ear >= opts.earPeak * openF) this.locked = false;
@@ -57,32 +58,38 @@ export class BlinkTracker {
     }
 
     if (this.closedAt === 0) {
-      if (ear <= opts.earPeak * closeF && symmetryDiff < maxSym) {
+      if (ear <= opts.earPeak * closeF && symmetryDiff <= maxSymmetryDiff) {
         this.closedAt = now;
         this.minEar = ear;
       }
       return false;
     }
 
-    this.minEar = Math.min(this.minEar, ear);
-    const dur = now - this.closedAt;
-
-    if (dur > 950) {
+    const duration = now - this.closedAt;
+    if (duration > maxCloseMs) {
       this.closedAt = 0;
       this.minEar = Infinity;
       this.locked = true;
       return false;
     }
 
+    // A one-sided wink or unstable landmark jump is not a bilateral blink.
+    if (symmetryDiff > maxSymmetryDiff) {
+      this.closedAt = 0;
+      this.minEar = Infinity;
+      return false;
+    }
+
+    this.minEar = Math.min(this.minEar, ear);
+
     if (ear >= opts.earPeak * openF) {
       const deepest = this.minEar;
       this.closedAt = 0;
       this.minEar = Infinity;
-      const minDur = 20;
       return (
-        dur >= minDur &&
-        dur <= 900 &&
-        deepest <= opts.earPeak * deepF
+        duration >= minCloseMs &&
+        duration <= maxCloseMs &&
+        deepest <= opts.earPeak * 0.72
       );
     }
 
