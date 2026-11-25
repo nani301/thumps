@@ -456,8 +456,6 @@ export function MarkAttendanceView({
           setPhase('camera_error');
           return;
         }
-        await engine.tryLockCameraControls(stream);
-
         // 2. Ensure models + negotiated backend are warmed
         const resolvedBackend = await warmupAadhaarEngine();
         if (!cancelled) {
@@ -1696,7 +1694,9 @@ export function MarkAttendanceView({
                         </div>
                         <div>
                           <h3 className="font-display text-base font-semibold text-red-200 tracking-tight">
-                            Spoof / Verification Blocked
+                            {verificationResult.livenessPassed
+                              ? 'Face does not match selected Student ID'
+                              : 'Liveness check did not pass'}
                           </h3>
                           <p className="text-xs text-red-300/90 mt-1 leading-relaxed">
                             {verificationResult.message}
