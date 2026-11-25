@@ -20,7 +20,6 @@ import {
   isGlassBlackPointVeil,
   l2,
   meanNormalized,
-  secureRandomInt,
 } from './livenessCore';
 import {
   scoreFaceAntiSpoof,
@@ -271,11 +270,9 @@ export class AadhaarSpeedAttendanceEngine {
   private neutralHoldStartMs = 0;
   private earSamples: number[] = [];
 
-  // Phase 2: Randomized, session-specific blink challenge
+  // Phase 2: One simple blink challenge
   private activeChallenge: LiveChallengeType = 'none';
   private challengeIssuedAt = 0;
-  private requiredBlinkCount = 1;
-  private observedBlinkCount = 0;
 
   // Glasses-friendly tracker calibrated from the user's own open eyes
   private earPeak = 0;
@@ -340,8 +337,6 @@ export class AadhaarSpeedAttendanceEngine {
     this.earSamples = [];
     this.activeChallenge = 'none';
     this.challengeIssuedAt = 0;
-    this.requiredBlinkCount = 1;
-    this.observedBlinkCount = 0;
     this.earPeak = 0;
     this.blinkTracker.reset();
     this.blinkCompleted = false;
@@ -917,16 +912,14 @@ export class AadhaarSpeedAttendanceEngine {
         return null;
       }
 
-      // Choose the challenge only after the live camera session has begun.
-      this.requiredBlinkCount = secureRandomInt(2) + 1;
-      this.observedBlinkCount = 0;
-      this.activeChallenge = this.requiredBlinkCount === 2 ? 'double_blink' : 'single_blink';
+      // Keep the interaction to one simple, bilateral blink.
+      this.activeChallenge = 'single_blink';
       this.challengeIssuedAt = now;
       this.blinkTracker.reset();
       this.blinkCompleted = false;
 
       options.onHudUpdate({
-        instruction: `Look at camera & blink ${this.requiredBlinkCount === 2 ? 'twice' : 'once'}`,
+        instruction: 'Look at the camera and blink once',
         subtext: 'Follow the live prompt; keep your face in frame',
         progress: 55,
         shouldFlashUI: false,
@@ -940,14 +933,14 @@ export class AadhaarSpeedAttendanceEngine {
     }
 
     // =========================================================================
-    // PHASE 2: TSTS ABAS SINGLE NATURAL BLINK AUTO-CAPTURE (8s timeout)
+    // PHASE 2: One natural blink auto-capture (12s timeout)
     // =========================================================================
     const blinkElapsed = now - this.challengeIssuedAt;
 
-    if (blinkElapsed > 8000) {
+    if (blinkElapsed > 12000) {
       options.onHudUpdate({
         instruction: 'Blink not detected — retry',
-        subtext: 'Look straight at the lens and give one clear blink',
+        subtext: 'Center your face, keep both eyes visible, then blink once',
         progress: 12,
         shouldFlashUI: false,
         qualityStatus: 'warn',
@@ -959,7 +952,7 @@ export class AadhaarSpeedAttendanceEngine {
       return this.buildHardRejectResult(
         video,
         options.mirror,
-        'Live blink challenge timed out — retry and follow the prompt',
+        'No clear blink was detected within 12 seconds. Center your face and try again.',
         { blinkVerified: false }
       );
     }
@@ -986,22 +979,6 @@ export class AadhaarSpeedAttendanceEngine {
     });
 
     if (blinked) {
-      this.observedBlinkCount++;
-      if (this.observedBlinkCount < this.requiredBlinkCount) {
-        options.onHudUpdate({
-          instruction: 'One blink detected — blink once more',
-          subtext: 'Keep looking at the camera',
-          progress: 72,
-          shouldFlashUI: false,
-          qualityStatus: 'locked',
-          activeChallenge: this.activeChallenge,
-          lightingStatus: 'good',
-          faceCentered: true,
-          blinkVerified: false,
-        });
-        return null;
-      }
-
       this.blinkCompleted = true;
       const hadPreBlinkFrame = this.bestFrame !== null;
       const postAlignedCanvas = this.captureAligned150Canvas(video, alignedBox);
@@ -1043,12 +1020,10 @@ export class AadhaarSpeedAttendanceEngine {
       });
     }
 
-    const progress = Math.min(85, 55 + Math.round((blinkElapsed / 8000) * 30));
+    const progress = Math.min(85, 55 + Math.round((blinkElapsed / 12000) * 30));
     options.onHudUpdate({
-      instruction: `Look at camera & blink ${this.requiredBlinkCount === 2 ? 'twice' : 'once'}`,
-      subtext: this.observedBlinkCount > 0
-        ? 'One blink detected — complete the challenge'
-        : 'Auto-capturing sharpest open-eye frame',
+      instruction: 'Look at the camera and blink once',
+      subtext: 'Keep your face centered; capture starts automatically',
       progress,
       shouldFlashUI: false,
       qualityStatus: 'locked',

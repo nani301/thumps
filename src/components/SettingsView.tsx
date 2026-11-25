@@ -469,34 +469,15 @@ export function SettingsView({
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-medium text-slate-900 dark:text-[#F6F1E6]">
-                  Require Single-Blink Liveness &amp; Screen Guard
+                  One-Blink Liveness &amp; Screen Guard
                 </p>
                 <p className="text-xs text-slate-500 dark:text-stone-400">
-                  Verifies one natural eye blink (~1.5s, blue-cut glasses safe) alongside passive screen &amp; bezel protection.
+                  Always required: one blink and local PIN-to-face matching. Phone and tablet browsers are blocked; phone-screen replays are checked automatically.
                 </p>
               </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={configDraft.requireLiveness}
-                onClick={() =>
-                  setConfigDraft({
-                    ...configDraft,
-                    requireLiveness: !configDraft.requireLiveness,
-                  })
-                }
-                className={`w-11 h-6 rounded-full neu-inset p-0.5 transition-colors cursor-pointer shrink-0 flex items-center ${
-                  configDraft.requireLiveness ? 'justify-end' : 'justify-start'
-                }`}
-              >
-                <span
-                  className={`w-5 h-5 rounded-full transition-all ${
-                    configDraft.requireLiveness
-                      ? 'bg-blue-600 dark:bg-gradient-to-br dark:from-[#E8CB80] dark:to-[#C29632] shadow-sm'
-                      : 'neu-raised-sm'
-                  }`}
-                />
-              </button>
+              <span className="shrink-0 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300">
+                Always on
+              </span>
             </div>
 
             <div className="flex items-center justify-between gap-4">

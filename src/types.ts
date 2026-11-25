@@ -100,6 +100,8 @@ export interface FacialVerificationRequest {
   capturedFrameDataUrl: string;
   liveDescriptor?: number[] | null;
   livenessPassed?: boolean;
+  identityMatchPassed: boolean;
+  identityMatchDistance?: number;
   spoofReason?: string;
   qualityChecks?: BiometricQualityChecks;
   latencyMs?: number;

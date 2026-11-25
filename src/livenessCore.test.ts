@@ -90,6 +90,59 @@ const ok = (label: string) => {
   assert.equal(C.identityContinuity(a, b, 0.42).ok, false);
   ok('identityContinuity accepts same face and rejects bait-and-switch (>0.42)');
 
+  const pinnedIdentity = { studentId: 'student-a', attendanceId: 'pin-a' };
+  assert.equal(
+    C.matchesPinnedIdentity(pinnedIdentity, {
+      matched: true,
+      studentId: 'student-a',
+      attendanceId: 'pin-a',
+    }),
+    true
+  );
+  assert.equal(
+    C.matchesPinnedIdentity(pinnedIdentity, {
+      matched: true,
+      studentId: 'student-b',
+      attendanceId: 'pin-b',
+    }),
+    false
+  );
+  assert.equal(
+    C.matchesPinnedIdentity(pinnedIdentity, {
+      matched: false,
+      studentId: 'student-a',
+      attendanceId: 'pin-a',
+    }),
+    false
+  );
+  ok('1:1 attendance only accepts the face and PIN selected together');
+  assert.equal(
+    C.isMobileAttendanceDevice(
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Mobile',
+      'iPhone',
+      5
+    ),
+    true
+  );
+  assert.equal(
+    C.isMobileAttendanceDevice(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)',
+      'MacIntel',
+      5
+    ),
+    true
+  );
+  assert.equal(
+    C.isMobileAttendanceDevice(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+      'Win32',
+      0,
+      false
+    ),
+    false
+  );
+  ok('mobile and touch-tablet attendance devices are rejected');
+
   const blended = C.meanNormalized(a, aSlightlyMoved, 0.7);
   assert.ok(Math.abs(Math.hypot(...blended) - 1) < 1e-4);
   ok('meanNormalized returns unit-length 128-D L2 vector');

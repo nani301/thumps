@@ -116,6 +116,7 @@ export default function App() {
       defaultCheckInMode:
         raw.defaultCheckInMode === 'walkup' ? 'walkup' : '1to1',
       cameraResolution: raw.cameraResolution === '720p' ? '720p' : '480p',
+      requireLiveness: true,
       maxEuclideanDistance:
         typeof raw.maxEuclideanDistance === 'number'
           ? raw.maxEuclideanDistance
