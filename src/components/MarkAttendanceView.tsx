@@ -50,7 +50,11 @@ import {
   type EnrolledStudentVector,
   type FastHudState,
 } from '../services/aadhaarFaceEngine';
-import { findPriorCheckIn } from '../services/livenessCore';
+import {
+  findPriorCheckIn,
+  isMobileAttendanceDevice,
+  matchesPinnedIdentity,
+} from '../services/livenessCore';
 import {
   playVerificationFlagTone,
   playVerificationSuccessChime,
@@ -313,6 +317,8 @@ export function MarkAttendanceView({
         capturedFrameDataUrl: string;
         liveDescriptor?: number[] | null;
         livenessPassed: boolean;
+        identityMatchPassed: boolean;
+        identityMatchDistance?: number;
         spoofReason?: string;
         qualityChecks?: BiometricQualityChecks;
         latencyMs?: number;
@@ -330,6 +336,8 @@ export function MarkAttendanceView({
           capturedFrameDataUrl: payload.capturedFrameDataUrl,
           liveDescriptor: payload.liveDescriptor,
           livenessPassed: payload.livenessPassed,
+          identityMatchPassed: payload.identityMatchPassed,
+          identityMatchDistance: payload.identityMatchDistance,
           spoofReason: payload.spoofReason,
           qualityChecks: payload.qualityChecks,
           latencyMs: payload.latencyMs,
@@ -413,7 +421,7 @@ export function MarkAttendanceView({
 
   /**
    * Live Biometric Loop Effect:
-   * - In 1:1 Mode: runs until randomized 3D live challenge + blink locks, then immediately shuts down camera.
+   * - In 1:1 Mode: runs until one live blink and the selected PIN face match, then immediately shuts down camera.
    * - In 1:N Walk-Up Queue Mode: runs continuously, logs each student with a 4s dedup cooldown, plays chime,
    *   shows a non-blocking receipt banner, and immediately resets for the next student in line.
    */
@@ -537,7 +545,7 @@ export function MarkAttendanceView({
               : [];
 
           const result = await engine.processVideoFrame(videoEl, effectiveRoster, {
-            requireLiveness: config.requireLiveness,
+            requireLiveness: true,
             mirror: config.mirrorCamera,
             onHudUpdate: (hud) => {
               if (!cancelled) setLiveHud(hud);
@@ -552,6 +560,14 @@ export function MarkAttendanceView({
               capturedFrameDataUrl: result.capturedFrameDataUrl,
               liveDescriptor: result.liveDescriptor,
               livenessPassed: result.spoofPassed,
+              identityMatchPassed: matchesPinnedIdentity(
+                {
+                  studentId: matchedStudent.id,
+                  attendanceId: matchedStudent.attendanceId,
+                },
+                result
+              ),
+              identityMatchDistance: result.distance,
               spoofReason: result.spoofPassed ? undefined : result.failReason,
               qualityChecks: result.qualityChecks,
               latencyMs: result.latencyMs,
@@ -744,8 +760,26 @@ export function MarkAttendanceView({
     setCapturedFrameUrl(null);
     setLiveHud(null);
     setQueueReceipt(null);
-    setPhase('requesting_camera');
 
+    const mobileNavigator = navigator as Navigator & {
+      userAgentData?: { mobile?: boolean };
+    };
+    if (
+      isMobileAttendanceDevice(
+        mobileNavigator.userAgent,
+        mobileNavigator.platform,
+        mobileNavigator.maxTouchPoints,
+        mobileNavigator.userAgentData?.mobile
+      )
+    ) {
+      setCameraErrorMessage(
+        'Attendance is disabled on phones and tablets. Use an approved desktop or laptop webcam. Suspected phone-screen replays are rejected.'
+      );
+      setPhase('camera_error');
+      return;
+    }
+
+    setPhase('requesting_camera');
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setCameraErrorMessage(
         'Physical camera API is unavailable in this browser context. Live webcam verification is strictly required for attendance.'
@@ -904,7 +938,7 @@ export function MarkAttendanceView({
                     Verify with Student PIN
                   </h2>
                   <p className="text-xs leading-relaxed text-slate-500 dark:text-stone-400 mt-1">
-                    Enter a registered Student PIN (e.g. 23210-ec-053). Camera activates on demand and gives a randomized live blink prompt before matching.
+                    Use an approved desktop or laptop. Enter a registered Student PIN, blink once, and the live face must match that PIN before attendance can be saved.
                   </p>
                 </div>
 
@@ -1183,7 +1217,8 @@ export function MarkAttendanceView({
                 )}
 
                 <p className="text-[11px] text-slate-500 dark:text-stone-400 flex items-center justify-between gap-2 pt-0.5">
-                  <span>Randomized Liveness + 128-D Matching</span>
+                    <span>One Blink · Screen Check · PIN Face Match</span>
+
                   <span className="font-mono tabular-nums">
                     {engineWarmed
                       ? `${getBackendDisplayLabel(activeBackend)} Ready`
@@ -1395,7 +1430,7 @@ export function MarkAttendanceView({
                         <span className="text-[#E5C675] font-medium">
                           Start Queue Session
                         </span>
-                        . Students follow the randomized live blink prompt to check in automatically.
+                        . Students blink once; screen-spoof and face-match checks run automatically.
                       </>
                     ) : (
                       <>
@@ -1403,12 +1438,12 @@ export function MarkAttendanceView({
                         <span className="text-[#E5C675] font-medium">
                           Mark Attendance
                         </span>
-                        . Follow the randomized blink prompt for live capture.
+                        . Blink once; only that PIN&apos;s enrolled face can be recorded.
                       </>
                     )}
                   </p>
                   <div className="mt-6 pt-5 border-t border-[#D4AF37]/15 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-[11px] text-stone-400 font-mono tabular-nums">
-                    <span>Randomized Live Blink</span>
+                    <span>Single Blink Liveness</span>
                     <span>·</span>
                     <span>128-D L2 Matching</span>
                     <span>·</span>
@@ -1757,7 +1792,7 @@ export function MarkAttendanceView({
                     <AlertTriangle className="w-5 h-5" />
                   </div>
                   <h3 className="mt-4 font-display text-base font-semibold text-[#F6F1E6]">
-                    Live physical camera required
+                    Approved desktop camera required
                   </h3>
                   <p className="mt-2 text-xs leading-relaxed text-stone-400">
                     {cameraErrorMessage}

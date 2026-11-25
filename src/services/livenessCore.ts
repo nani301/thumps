@@ -162,6 +162,36 @@ export function identityContinuity(
   return { ok: distance <= maxDist, distance: Number(distance.toFixed(4)) };
 }
 
+export function matchesPinnedIdentity(
+  expected: { studentId: string; attendanceId: string },
+  match: {
+    matched: boolean;
+    studentId: string | null;
+    attendanceId: string | null;
+  }
+): boolean {
+  return (
+    match.matched &&
+    match.studentId === expected.studentId &&
+    match.attendanceId === expected.attendanceId
+  );
+}
+
+export function isMobileAttendanceDevice(
+  userAgent: string,
+  platform: string,
+  maxTouchPoints: number,
+  mobileHint?: boolean
+): boolean {
+  return (
+    mobileHint === true ||
+    /Android|iPhone|iPad|iPod|Mobile|Windows Phone|BlackBerry|IEMobile|Opera Mini/i.test(
+      userAgent
+    ) ||
+    (platform === 'MacIntel' && maxTouchPoints > 1)
+  );
+}
+
 // 4. Borderless Screen Spoof & Active Chromatic Illumination Geometry Utilities
 export const FLASH_PALETTE: readonly RGB[] = [
   [255, 52, 52],   // Vivid Red (high +R-B)

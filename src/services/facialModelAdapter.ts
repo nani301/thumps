@@ -44,8 +44,8 @@ export async function verifyFaceFrame(
     request.qualityChecks?.challengePassed === true &&
     request.qualityChecks?.blinkVerified === true;
 
-  // Liveness must be established locally; a remote matcher cannot override a failed or missing challenge.
-  if (config.requireLiveness && !localLivenessPassed) {
+  // Attendance always requires local liveness; a remote matcher cannot bypass it.
+  if (!localLivenessPassed) {
     return {
       verified: false,
       confidence: 0,
@@ -54,7 +54,22 @@ export async function verifyFaceFrame(
       qualityChecks: request.qualityChecks,
       processingMs: request.latencyMs ?? Math.round(performance.now() - start),
       mode: config.modelMode,
-      message: request.spoofReason || 'Live randomized challenge did not pass.',
+      message: request.spoofReason || 'Live one-blink verification did not pass.',
+    };
+  }
+
+  // Do not ask a remote API to verify a face that failed the local PIN-specific match.
+  if (!request.identityMatchPassed) {
+    return {
+      verified: false,
+      confidence: 0,
+      euclideanDistance: request.identityMatchDistance,
+      livenessPassed: true,
+      qualityChecks: request.qualityChecks,
+      processingMs: request.latencyMs ?? Math.round(performance.now() - start),
+      mode: config.modelMode,
+      message:
+        'This live face does not match the enrolled face for the selected Student PIN. No attendance was saved.',
     };
   }
 
@@ -73,7 +88,7 @@ export async function verifyFaceFrame(
           reference_photo: request.student.referencePhotoUrl,
           confidence_threshold: config.confidenceThreshold,
           max_euclidean_distance: config.maxEuclideanDistance,
-          require_liveness: config.requireLiveness,
+          require_liveness: true,
           liveness_passed: request.livenessPassed ?? false,
           quality_checks: request.qualityChecks ?? null,
           timestamp: request.timestamp,
@@ -98,14 +113,13 @@ export async function verifyFaceFrame(
           : typeof data.distance === 'number'
           ? distanceToConfidence(data.distance)
           : 0;
-      const livenessPassed = config.requireLiveness
-        ? localLivenessPassed && data.liveness_passed !== false
-        : data.liveness_passed ?? request.livenessPassed ?? true;
+      const livenessPassed =
+        localLivenessPassed && data.liveness_passed !== false;
       const verified =
         (typeof data.verified === 'boolean'
           ? data.verified
           : confidence >= config.confidenceThreshold) &&
-        (!config.requireLiveness || livenessPassed);
+        livenessPassed;
 
       return {
         verified,
@@ -200,13 +214,9 @@ export async function verifyFaceFrame(
 
     const distance = Number(minDistance.toFixed(4));
     const confidence = distanceToConfidence(distance);
-    const blinkOk =
-      !config.requireLiveness || Boolean(request.qualityChecks?.blinkVerified);
-    const challengeOk =
-      !config.requireLiveness || Boolean(request.qualityChecks?.challengePassed);
-    const livenessOk =
-      !config.requireLiveness ||
-      (Boolean(request.livenessPassed) && blinkOk && challengeOk);
+    const blinkOk = Boolean(request.qualityChecks?.blinkVerified);
+    const challengeOk = Boolean(request.qualityChecks?.challengePassed);
+    const livenessOk = Boolean(request.livenessPassed) && blinkOk && challengeOk;
     const distanceMatch = distance <= config.maxEuclideanDistance;
     const verified = livenessOk && distanceMatch;
 
@@ -227,7 +237,7 @@ export async function verifyFaceFrame(
           : '';
       message = `Aadhaar 128-D match & blink liveness confirmed (distance ${distance.toFixed(3)} ≤ ${config.maxEuclideanDistance.toFixed(2)}${challengeSuffix}${reactSuffix}${padSuffix}).`;
     } else if (!blinkOk) {
-      message = 'The randomized blink challenge was not completed.';
+      message = 'The required one-blink liveness check was not completed.';
     } else if (!livenessOk) {
       message = 'Live anti-spoof verification did not complete.';
     } else {
