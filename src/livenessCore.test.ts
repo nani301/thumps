@@ -39,9 +39,6 @@ const ok = (label: string) => {
   assert.equal(run([...open(8), 0.14, 0.11, 0.15, ...open(8)], 33, false), 1);
   ok('real natural blink @30fps');
 
-  assert.equal(run([...open(8), 0.23, 0.23, ...open(8)], 50, false), 1);
-  ok('moderate natural blink is accepted despite variable eyelid closure');
-
   assert.equal(run([...open(8), 0.16, ...open(8)], 66, true), 1);
   ok('real natural blink @15fps WASM');
 

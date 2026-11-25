@@ -46,13 +46,11 @@ export class BlinkTracker {
     now: number,
     opts: { earPeak: number; lowFps: boolean }
   ): boolean {
-    // Landmark EAR varies with camera angle and eyelid shape; detect a natural
-    // closure earlier, while still requiring a deep dip and a distinct reopen.
-    const closeF = opts.lowFps ? 0.87 : 0.86;
-    const openF = 0.86;
+    const closeF = opts.lowFps ? 0.83 : 0.80;
+    const openF = 0.87;
     const maxSymmetryDiff = Math.max(0.065, opts.earPeak * 0.35);
     const maxCloseMs = 700;
-    const minCloseMs = opts.lowFps ? 55 : 45;
+    const minCloseMs = opts.lowFps ? 60 : 55;
 
     if (this.locked) {
       if (ear >= opts.earPeak * openF) this.locked = false;
@@ -91,7 +89,7 @@ export class BlinkTracker {
       return (
         duration >= minCloseMs &&
         duration <= maxCloseMs &&
-        deepest <= opts.earPeak * 0.82
+        deepest <= opts.earPeak * 0.76
       );
     }
 
