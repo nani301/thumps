@@ -20,6 +20,7 @@ import {
   isGlassBlackPointVeil,
   l2,
   meanNormalized,
+  secureRandomInt,
 } from './livenessCore';
 import {
   scoreFaceAntiSpoof,
@@ -40,8 +41,8 @@ import {
  *    and centered pose (|yawSym| <= 0.20, rollDeg <= 16).
  * 2. Silent Passive Screen/Bezel Guard: Full-frame 256x192 corner + 1.45x Sobel bezel +
  *    Moire + glass black-point veil with 2-strike confirmation.
- * 3. Glasses-Friendly Single Natural Blink: 200ms personal open-eye EAR calibration,
- *    then instant capture lock on ONE natural blink (blue-cut lens safe).
+ * 3. Randomized Live Blink Challenge: calibrate open-eye EAR, then require one or
+ *    two bilateral blinks selected per session (blue-cut lens safe).
  * 4. Single-Shot Sharpest Pre-Blink 128-D Extraction: Extracts ResNet-34 128-D L2 vector
  *    once from the sharpest open-eye frontal frame and matches against enrolled vectors.
  */
@@ -72,6 +73,7 @@ const BLOCKED_CAM_KEYWORDS = [
 export function getChallengePromptLabel(type: LiveChallengeType | string): string {
   if (!type || type === 'none') return 'Look at camera';
   if (type === 'single_blink') return 'Single Blink';
+  if (type === 'double_blink') return 'Double Blink';
   if (type.includes('>')) return type.split('>').join(' → ');
   return type;
 }
@@ -269,11 +271,13 @@ export class AadhaarSpeedAttendanceEngine {
   private neutralHoldStartMs = 0;
   private earSamples: number[] = [];
 
-  // Phase 2: Single Natural Blink (TSTS ABAS Mode)
+  // Phase 2: Randomized, session-specific blink challenge
   private activeChallenge: LiveChallengeType = 'none';
   private challengeIssuedAt = 0;
+  private requiredBlinkCount = 1;
+  private observedBlinkCount = 0;
 
-  // Glasses-Friendly Single-Blink Tracker (calibrated from user's own open eyes)
+  // Glasses-friendly tracker calibrated from the user's own open eyes
   private earPeak = 0;
   private readonly blinkTracker = new BlinkTracker();
   private blinkCompleted = false;
@@ -336,6 +340,8 @@ export class AadhaarSpeedAttendanceEngine {
     this.earSamples = [];
     this.activeChallenge = 'none';
     this.challengeIssuedAt = 0;
+    this.requiredBlinkCount = 1;
+    this.observedBlinkCount = 0;
     this.earPeak = 0;
     this.blinkTracker.reset();
     this.blinkCompleted = false;
@@ -895,8 +901,8 @@ export class AadhaarSpeedAttendanceEngine {
         !this.bestFrame
       ) {
         options.onHudUpdate({
-          instruction: 'Look at camera & blink once',
-          subtext: 'Hold steady for instant capture',
+          instruction: 'Look straight at the camera',
+          subtext: 'A live challenge will appear shortly',
           progress: Math.min(
             52,
             32 + Math.round((Math.min(neutralElapsed, 200) / 200) * 20)
@@ -911,19 +917,21 @@ export class AadhaarSpeedAttendanceEngine {
         return null;
       }
 
-      // Personal EAR calibrated — arm instant single-blink capture!
-      this.activeChallenge = 'single_blink';
+      // Choose the challenge only after the live camera session has begun.
+      this.requiredBlinkCount = secureRandomInt(2) + 1;
+      this.observedBlinkCount = 0;
+      this.activeChallenge = this.requiredBlinkCount === 2 ? 'double_blink' : 'single_blink';
       this.challengeIssuedAt = now;
       this.blinkTracker.reset();
       this.blinkCompleted = false;
 
       options.onHudUpdate({
-        instruction: 'Look at camera & blink once',
-        subtext: 'Natural blink — works smoothly with glasses',
+        instruction: `Look at camera & blink ${this.requiredBlinkCount === 2 ? 'twice' : 'once'}`,
+        subtext: 'Follow the live prompt; keep your face in frame',
         progress: 55,
         shouldFlashUI: false,
         qualityStatus: 'locked',
-        activeChallenge: 'single_blink',
+        activeChallenge: this.activeChallenge,
         lightingStatus: 'good',
         faceCentered: true,
         blinkVerified: false,
@@ -951,19 +959,19 @@ export class AadhaarSpeedAttendanceEngine {
       return this.buildHardRejectResult(
         video,
         options.mirror,
-        'Eye blink not detected — look straight and blink once',
+        'Live blink challenge timed out — retry and follow the prompt',
         { blinkVerified: false }
       );
     }
 
     if (!faceCentered) {
       options.onHudUpdate({
-        instruction: 'Center your face & blink once',
+        instruction: 'Center your face and follow the blink prompt',
         subtext: 'Keep head straight inside the oval guide',
         progress: 58,
         shouldFlashUI: false,
         qualityStatus: 'warn',
-        activeChallenge: 'single_blink',
+        activeChallenge: this.activeChallenge,
         lightingStatus: 'good',
         faceCentered: false,
         blinkVerified: false,
@@ -978,6 +986,22 @@ export class AadhaarSpeedAttendanceEngine {
     });
 
     if (blinked) {
+      this.observedBlinkCount++;
+      if (this.observedBlinkCount < this.requiredBlinkCount) {
+        options.onHudUpdate({
+          instruction: 'One blink detected — blink once more',
+          subtext: 'Keep looking at the camera',
+          progress: 72,
+          shouldFlashUI: false,
+          qualityStatus: 'locked',
+          activeChallenge: this.activeChallenge,
+          lightingStatus: 'good',
+          faceCentered: true,
+          blinkVerified: false,
+        });
+        return null;
+      }
+
       this.blinkCompleted = true;
       const hadPreBlinkFrame = this.bestFrame !== null;
       const postAlignedCanvas = this.captureAligned150Canvas(video, alignedBox);
@@ -1009,7 +1033,7 @@ export class AadhaarSpeedAttendanceEngine {
       return this.finalizeMatch(enrolledRoster, {
         microTremorPassed,
         blinkVerified: true,
-        challengeType: 'single_blink',
+        challengeType: this.activeChallenge,
         challengePassed: true,
         reactionTimeMs,
         postPadFrame: postPadCapture,
@@ -1021,8 +1045,10 @@ export class AadhaarSpeedAttendanceEngine {
 
     const progress = Math.min(85, 55 + Math.round((blinkElapsed / 8000) * 30));
     options.onHudUpdate({
-      instruction: 'Look at camera & blink once',
-      subtext: 'Auto-capturing sharpest open-eye frame',
+      instruction: `Look at camera & blink ${this.requiredBlinkCount === 2 ? 'twice' : 'once'}`,
+      subtext: this.observedBlinkCount > 0
+        ? 'One blink detected — complete the challenge'
+        : 'Auto-capturing sharpest open-eye frame',
       progress,
       shouldFlashUI: false,
       qualityStatus: 'locked',
@@ -1084,7 +1110,7 @@ export class AadhaarSpeedAttendanceEngine {
           reflectionDelta,
           padRealScore: null,
         },
-        failReason: 'Eye blink not detected — look straight and blink once',
+        failReason: 'Live blink challenge timed out — retry and follow the prompt',
       };
     }
 
@@ -1118,10 +1144,17 @@ export class AadhaarSpeedAttendanceEngine {
         : null;
 
       const padSamples = [prePad, postPad].filter(
-        (p): p is NonNullable<typeof p> => p !== null
+        (p): p is NonNullable<typeof p> =>
+          p !== null &&
+          Number.isFinite(p.realScore) &&
+          Number.isFinite(p.tightScore) &&
+          Number.isFinite(p.contextScore) &&
+          p.realScore >= 0 && p.realScore <= 1 &&
+          p.tightScore >= 0 && p.tightScore <= 1 &&
+          p.contextScore >= 0 && p.contextScore <= 1
       );
 
-      if (padSamples.length > 0) {
+      if (padSamples.length === 2) {
         const avgRealScore =
           padSamples.reduce((sum, p) => sum + p.realScore, 0) /
           padSamples.length;
@@ -1185,48 +1218,40 @@ export class AadhaarSpeedAttendanceEngine {
           };
         }
       } else {
-        // Fallback if neither ONNX nor TFJS PAD could load: still enforce hair glass-veil guard
-        const preVeil = evaluateHairBlackPointVeil(winner.veilStats);
-        const postVeil = meta.postVeilStats
-          ? evaluateHairBlackPointVeil(meta.postVeilStats)
-          : null;
-        if (preVeil.detected && Boolean(postVeil?.detected)) {
-          const totalLatency = Math.round(
-            performance.now() - this.sessionStartMs
-          );
-          const capturedFrameDataUrl = winner.snapshotCanvas.toDataURL(
-            'image/jpeg',
-            0.88
-          );
-          this.resetSession();
-          return {
-            matched: false,
-            studentId: null,
-            attendanceId: null,
-            distance: 1.0,
-            confidence: 0,
-            latencyMs: totalLatency,
-            spoofPassed: false,
-            liveDescriptor: [],
-            capturedFrameDataUrl,
-            qualityChecks: {
-              hardwareValid: true,
-              singleFace: true,
-              lightingSharpness: true,
-              moirePassed: true,
-              screenBorderClear: false,
-              microTremorPassed: meta.microTremorPassed,
-              depthParallaxPassed: false,
-              blinkVerified: meta.blinkVerified,
-              challengeType: meta.challengeType,
-              challengePassed: false,
-              reactionTimeMs: meta.reactionTimeMs,
-              reflectionDelta,
-              padRealScore: null,
-            },
-            failReason: 'Screen glass reflection veil detected — spoof blocked',
-          };
-        }
+        const totalLatency = Math.round(performance.now() - this.sessionStartMs);
+        const capturedFrameDataUrl = winner.snapshotCanvas.toDataURL(
+          'image/jpeg',
+          0.88
+        );
+        this.resetSession();
+        return {
+          matched: false,
+          studentId: null,
+          attendanceId: null,
+          distance: 1.0,
+          confidence: 0,
+          latencyMs: totalLatency,
+          spoofPassed: false,
+          liveDescriptor: [],
+          capturedFrameDataUrl,
+          qualityChecks: {
+            hardwareValid: true,
+            singleFace: true,
+            lightingSharpness: true,
+            moirePassed: true,
+            screenBorderClear: true,
+            microTremorPassed: meta.microTremorPassed,
+            depthParallaxPassed: false,
+            blinkVerified: meta.blinkVerified,
+            challengeType: meta.challengeType,
+            challengePassed: false,
+            reactionTimeMs: meta.reactionTimeMs,
+            reflectionDelta,
+            padRealScore: null,
+            padBackend: 'unavailable',
+          },
+          failReason: 'Neural anti-spoof could not validate both live frames — retry in good lighting',
+        };
       }
     }
 

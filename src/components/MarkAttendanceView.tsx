@@ -904,7 +904,7 @@ export function MarkAttendanceView({
                     Verify with Student PIN
                   </h2>
                   <p className="text-xs leading-relaxed text-slate-500 dark:text-stone-400 mt-1">
-                    Enter a registered Student PIN (e.g. 23210-ec-053). Camera activates on demand and marks attendance in ~1.5s with one natural blink.
+                    Enter a registered Student PIN (e.g. 23210-ec-053). Camera activates on demand and gives a randomized live blink prompt before matching.
                   </p>
                 </div>
 
@@ -1183,7 +1183,7 @@ export function MarkAttendanceView({
                 )}
 
                 <p className="text-[11px] text-slate-500 dark:text-stone-400 flex items-center justify-between gap-2 pt-0.5">
-                  <span>1-Blink Liveness + 128-D Matching</span>
+                  <span>Randomized Liveness + 128-D Matching</span>
                   <span className="font-mono tabular-nums">
                     {engineWarmed
                       ? `${getBackendDisplayLabel(activeBackend)} Ready`
@@ -1395,7 +1395,7 @@ export function MarkAttendanceView({
                         <span className="text-[#E5C675] font-medium">
                           Start Queue Session
                         </span>
-                        . Students look straight, blink once naturally, and check in automatically.
+                        . Students follow the randomized live blink prompt to check in automatically.
                       </>
                     ) : (
                       <>
@@ -1403,12 +1403,12 @@ export function MarkAttendanceView({
                         <span className="text-[#E5C675] font-medium">
                           Mark Attendance
                         </span>
-                        . Look at the camera and blink once for ~1.5s capture.
+                        . Follow the randomized blink prompt for live capture.
                       </>
                     )}
                   </p>
                   <div className="mt-6 pt-5 border-t border-[#D4AF37]/15 flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 text-[11px] text-stone-400 font-mono tabular-nums">
-                    <span>1 Natural Blink</span>
+                    <span>Randomized Live Blink</span>
                     <span>·</span>
                     <span>128-D L2 Matching</span>
                     <span>·</span>
@@ -1505,7 +1505,7 @@ export function MarkAttendanceView({
                     >
                       {indexingRoster
                         ? 'Preparing biometric index...'
-                        : liveHud?.instruction || 'Look at camera & blink once'}
+                        : liveHud?.instruction || 'Look straight at the camera'}
                     </p>
                     <div className="h-1 max-w-xs mx-auto w-full rounded-full bg-white/15 overflow-hidden">
                       <div
