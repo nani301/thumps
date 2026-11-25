@@ -282,7 +282,6 @@ export class AadhaarSpeedAttendanceEngine {
   // Passive Anti-Spoof Signals (Micro-tremor + Screen Strikes)
   private noseRatios: number[] = [];
   private sessionStartMs = 0;
-  private screenSpoofStrikes = 0;
 
   // Sharpest Frontal Pre-Blink Winner (full-res 150x150 dlib crop)
   private bestFrame: BufferedWinnerFrame | null = null;
@@ -341,7 +340,6 @@ export class AadhaarSpeedAttendanceEngine {
     this.blinkTracker.reset();
     this.blinkCompleted = false;
     this.noseRatios = [];
-    this.screenSpoofStrikes = 0;
     this.bestFrame = null;
     this.sessionStartMs = performance.now();
   }
@@ -423,36 +421,6 @@ export class AadhaarSpeedAttendanceEngine {
       };
     }
     return { valid: true, label };
-  }
-
-  /**
-   * Best-effort manual exposure & white-balance lock (prevents sensor flicker during capture).
-   */
-  public async tryLockCameraControls(stream: MediaStream): Promise<string[]> {
-    try {
-      const track = stream.getVideoTracks()[0] as MediaStreamTrack & {
-        getCapabilities?: () => Record<string, unknown>;
-      };
-      if (!track) return [];
-      const cap = (track.getCapabilities?.() ?? {}) as {
-        whiteBalanceMode?: string[];
-        exposureMode?: string[];
-      };
-      const adv: Record<string, string> = {};
-      if (cap.whiteBalanceMode?.includes('manual')) {
-        adv.whiteBalanceMode = 'manual';
-      }
-      if (cap.exposureMode?.includes('manual')) {
-        adv.exposureMode = 'manual';
-      }
-      if (Object.keys(adv).length === 0) return [];
-      await track.applyConstraints({
-        advanced: [adv],
-      } as MediaTrackConstraints);
-      return Object.keys(adv);
-    } catch {
-      return [];
-    }
   }
 
   /**
@@ -709,13 +677,18 @@ export class AadhaarSpeedAttendanceEngine {
         ? 'soft'
         : 'good';
 
+    if (this.activeChallenge !== 'none' && lightingStatus !== 'good') {
+      this.challengeIssuedAt = now;
+    }
+
     const screenAudit = this.detectPhoneScreenAndBezel(video, box, innerStats);
 
-    if (options.requireLiveness && screenAudit.isScreenSpoof) {
-      this.screenSpoofStrikes++;
+    if (
+      options.requireLiveness &&
+      screenAudit.isScreenSpoof &&
+      screenAudit.immediateReject
+    ) {
       this.neutralHoldStartMs = 0;
-      const shouldRejectNow =
-        screenAudit.immediateReject || this.screenSpoofStrikes >= 2;
       options.onHudUpdate({
         instruction: screenAudit.errorMessage,
         subtext: screenAudit.reason,
@@ -727,21 +700,11 @@ export class AadhaarSpeedAttendanceEngine {
         faceCentered: false,
         blinkVerified: false,
       });
-      if (shouldRejectNow) {
-        return this.buildHardRejectResult(
-          video,
-          options.mirror,
-          screenAudit.errorMessage,
-          {
-            lightingSharpness: lightingStatus === 'good',
-            moirePassed: !innerStats.highFreqSpike,
-            screenBorderClear: false,
-          }
-        );
-      }
-      return null;
-    } else {
-      this.screenSpoofStrikes = Math.max(0, this.screenSpoofStrikes - 1);
+      return this.buildHardRejectResult(video, options.mirror, screenAudit.errorMessage, {
+        lightingSharpness: lightingStatus === 'good',
+        moirePassed: !innerStats.highFreqSpike,
+        screenBorderClear: false,
+      });
     }
 
     if (lightingStatus === 'dark') {
@@ -935,29 +898,8 @@ export class AadhaarSpeedAttendanceEngine {
     // =========================================================================
     // PHASE 2: One natural blink auto-capture (12s timeout)
     // =========================================================================
-    const blinkElapsed = now - this.challengeIssuedAt;
-
-    if (blinkElapsed > 12000) {
-      options.onHudUpdate({
-        instruction: 'Blink not detected — retry',
-        subtext: 'Center your face, keep both eyes visible, then blink once',
-        progress: 12,
-        shouldFlashUI: false,
-        qualityStatus: 'warn',
-        activeChallenge: 'none',
-        lightingStatus: 'good',
-        faceCentered,
-        blinkVerified: false,
-      });
-      return this.buildHardRejectResult(
-        video,
-        options.mirror,
-        'No clear blink was detected within 12 seconds. Center your face and try again.',
-        { blinkVerified: false }
-      );
-    }
-
     if (!faceCentered) {
+      this.challengeIssuedAt = now;
       options.onHudUpdate({
         instruction: 'Center your face and follow the blink prompt',
         subtext: 'Keep head straight inside the oval guide',
@@ -970,6 +912,27 @@ export class AadhaarSpeedAttendanceEngine {
         blinkVerified: false,
       });
       return null;
+    }
+
+    const blinkElapsed = now - this.challengeIssuedAt;
+    if (blinkElapsed > 12000) {
+      options.onHudUpdate({
+        instruction: 'Blink not detected — retry',
+        subtext: 'Center your face, keep both eyes visible, then blink once',
+        progress: 12,
+        shouldFlashUI: false,
+        qualityStatus: 'warn',
+        activeChallenge: 'none',
+        lightingStatus: 'good',
+        faceCentered: true,
+        blinkVerified: false,
+      });
+      return this.buildHardRejectResult(
+        video,
+        options.mirror,
+        'No clear blink was detected during 12 seconds of usable frames. Center your face and try again.',
+        { blinkVerified: false }
+      );
     }
 
     const effectiveEarPeak = this.earPeak >= 0.14 ? this.earPeak : 0.20;
@@ -2538,8 +2501,6 @@ export async function runEnrollmentVectorBurst(
       qualityChecks: emptyChecks,
     };
   }
-  await engine.tryLockCameraControls(stream);
-
   options.onHudUpdate?.({
     instruction: 'Warming up biometric models...',
     subtext: 'SSD MobileNet · 68 Landmarks · ResNet-34',

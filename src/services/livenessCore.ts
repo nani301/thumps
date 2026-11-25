@@ -48,7 +48,7 @@ export class BlinkTracker {
   ): boolean {
     const closeF = opts.lowFps ? 0.83 : 0.80;
     const openF = 0.87;
-    const maxSymmetryDiff = Math.max(0.05, opts.earPeak * 0.3);
+    const maxSymmetryDiff = Math.max(0.065, opts.earPeak * 0.35);
     const maxCloseMs = 700;
     const minCloseMs = opts.lowFps ? 60 : 55;
 
@@ -89,7 +89,7 @@ export class BlinkTracker {
       return (
         duration >= minCloseMs &&
         duration <= maxCloseMs &&
-        deepest <= opts.earPeak * 0.72
+        deepest <= opts.earPeak * 0.76
       );
     }
 

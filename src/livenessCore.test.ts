@@ -48,6 +48,26 @@ const ok = (label: string) => {
   );
   ok('glasses / narrow-eye blink (earPeak=0.185)');
 
+  const slightAsymmetry = new C.BlinkTracker();
+  let slightAsymmetryCount = 0;
+  let slightAsymmetryTime = 1000;
+  for (const ear of [...open(8), 0.14, 0.11, 0.15, ...open(8)]) {
+    slightAsymmetryTime += 33;
+    if (
+      slightAsymmetry.update(ear, ear < 0.2 ? 0.1 : 0.01, slightAsymmetryTime, {
+        earPeak: 0.3,
+        lowFps: false,
+      })
+    ) {
+      slightAsymmetryCount++;
+    }
+  }
+  assert.equal(slightAsymmetryCount, 1);
+  ok('natural slightly asymmetric blink is accepted');
+
+  assert.equal(run([...open(8), 0.235, ...open(8)], 33, false), 0);
+  ok('shallow eyelid landmark jitter remains rejected');
+
   assert.equal(run([...open(8), 0.255, ...open(8)], 66, true), 0);
   ok('shallow landmark jitter rejected');
 
