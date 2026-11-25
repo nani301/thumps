@@ -51,8 +51,31 @@ const ok = (label: string) => {
   assert.equal(run([...open(8), 0.255, ...open(8)], 66, true), 0);
   ok('shallow landmark jitter rejected');
 
+  const wink = new C.BlinkTracker();
+  let winkCount = 0;
+  let winkTime = 1000;
+  for (const [ear, symmetry] of [
+    ...open(8).map((ear) => [ear, 0.01] as const),
+    [0.1, 0.11] as const,
+    [0.1, 0.11] as const,
+    [0.3, 0.01] as const,
+    ...open(4).map((ear) => [ear, 0.01] as const),
+  ]) {
+    winkTime += 33;
+    if (wink.update(ear, symmetry, winkTime, { earPeak: 0.3, lowFps: false })) {
+      winkCount++;
+    }
+  }
+  assert.equal(winkCount, 0);
+  ok('unilateral wink is rejected');
+
+  const transient = new C.BlinkTracker();
+  assert.equal(transient.update(0.1, 0.01, 1000, { earPeak: 0.3, lowFps: false }), false);
+  assert.equal(transient.update(0.3, 0.01, 1033, { earPeak: 0.3, lowFps: false }), false);
+  ok('single-frame closure shorter than a natural blink is rejected');
+
   assert.equal(run([...open(6), ...Array(32).fill(0.1), ...open(8)], 33, false), 0);
-  ok('held-closed >950ms rejected and not counted on reopen');
+  ok('held-closed >700ms rejected and not counted on reopen');
 }
 
 // 4. Pre-blink vs Post-blink Identity Continuity (0.42 bait-and-switch guard)

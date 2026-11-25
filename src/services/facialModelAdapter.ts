@@ -39,12 +39,13 @@ export async function verifyFaceFrame(
 ): Promise<FacialVerificationResponse> {
   const start = performance.now();
 
-  // Immediate Anti-Spoof Rejection (e.g. 'Screen border detected' via 1.45x Sobel / Luma Contrast)
-  if (
-    config.requireLiveness &&
-    request.livenessPassed === false &&
-    request.spoofReason
-  ) {
+  const localLivenessPassed =
+    request.livenessPassed === true &&
+    request.qualityChecks?.challengePassed === true &&
+    request.qualityChecks?.blinkVerified === true;
+
+  // Liveness must be established locally; a remote matcher cannot override a failed or missing challenge.
+  if (config.requireLiveness && !localLivenessPassed) {
     return {
       verified: false,
       confidence: 0,
@@ -53,7 +54,7 @@ export async function verifyFaceFrame(
       qualityChecks: request.qualityChecks,
       processingMs: request.latencyMs ?? Math.round(performance.now() - start),
       mode: config.modelMode,
-      message: request.spoofReason,
+      message: request.spoofReason || 'Live randomized challenge did not pass.',
     };
   }
 
@@ -97,13 +98,14 @@ export async function verifyFaceFrame(
           : typeof data.distance === 'number'
           ? distanceToConfidence(data.distance)
           : 0;
-      const livenessPassed =
-        data.liveness_passed ?? request.livenessPassed ?? true;
+      const livenessPassed = config.requireLiveness
+        ? localLivenessPassed && data.liveness_passed !== false
+        : data.liveness_passed ?? request.livenessPassed ?? true;
       const verified =
-        typeof data.verified === 'boolean'
+        (typeof data.verified === 'boolean'
           ? data.verified
-          : confidence >= config.confidenceThreshold &&
-            (!config.requireLiveness || livenessPassed);
+          : confidence >= config.confidenceThreshold) &&
+        (!config.requireLiveness || livenessPassed);
 
       return {
         verified,
@@ -200,8 +202,11 @@ export async function verifyFaceFrame(
     const confidence = distanceToConfidence(distance);
     const blinkOk =
       !config.requireLiveness || Boolean(request.qualityChecks?.blinkVerified);
+    const challengeOk =
+      !config.requireLiveness || Boolean(request.qualityChecks?.challengePassed);
     const livenessOk =
-      !config.requireLiveness || (Boolean(request.livenessPassed) && blinkOk);
+      !config.requireLiveness ||
+      (Boolean(request.livenessPassed) && blinkOk && challengeOk);
     const distanceMatch = distance <= config.maxEuclideanDistance;
     const verified = livenessOk && distanceMatch;
 
@@ -222,7 +227,7 @@ export async function verifyFaceFrame(
           : '';
       message = `Aadhaar 128-D match & blink liveness confirmed (distance ${distance.toFixed(3)} ≤ ${config.maxEuclideanDistance.toFixed(2)}${challengeSuffix}${reactSuffix}${padSuffix}).`;
     } else if (!blinkOk) {
-      message = 'Eye blink not detected — look straight and blink once.';
+      message = 'The randomized blink challenge was not completed.';
     } else if (!livenessOk) {
       message = 'Live anti-spoof verification did not complete.';
     } else {

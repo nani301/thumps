@@ -6,7 +6,7 @@ export type ModelMode = 'aadhaar_local' | 'custom_api';
 
 export type CheckInMode = '1to1' | 'walkup';
 
-export type LiveChallengeType = 'single_blink' | 'none';
+export type LiveChallengeType = 'single_blink' | 'double_blink' | 'none';
 
 export interface BiometricQualityChecks {
   hardwareValid: boolean;
